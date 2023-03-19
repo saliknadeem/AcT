@@ -15,6 +15,7 @@ from utils.trainer import Trainer
 # LOAD CONFIG 
 parser = argparse.ArgumentParser(description='Process some input')
 parser.add_argument('--config', default='utils/config.yaml', type=str, help='Config path', required=False)    
+parser.add_argument('--infer','-i', action='store_true', help='Run inference on a model') 
 parser.add_argument('--benchmark','-b', action='store_true', help='Run a benchmark') 
 parser.add_argument('--search','-s', action='store_true', help='Run a random search')
     
@@ -44,7 +45,8 @@ trainer = Trainer(config, logger)
 if args.benchmark:
     # RUN BENCHMARK
     trainer.do_benchmark()
-
+elif args.infer:
+    trainer.do_inference()
 elif args.search:
     # RUN RANDOM SEARCH
     trainer.do_random_search()

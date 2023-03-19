@@ -190,6 +190,10 @@ class Trainer:
         return bal_acc
         
     def do_benchmark(self):
+        self.logger.save_log(f"-----------------------------------------")
+        self.logger.save_log(f"MODEL_SIZE: {self.config['MODEL_SIZE']}, DATASET: {self.config['DATASET']}")
+        self.logger.save_log(f"NOTES: {self.config['NOTES']}")
+        self.logger.save_log(f"-----------------------------------------\n")
         for split in range(1, self.config['SPLITS']+1):      
             self.logger.save_log(f"----- Start Split {split} ----\n")
             self.split = split
@@ -214,7 +218,39 @@ class Trainer:
             self.logger.save_log(f"Accuracy std: {np.std(acc_list)}")
             self.logger.save_log(f"Balanced Accuracy mean: {np.mean(bal_acc_list)}")
             self.logger.save_log(f"Balanced Accuracy std: {np.std(bal_acc_list)}")
-        
+    
+    
+    def do_inference(self):
+        self.logger.save_log(f"--------------------------------------------")
+        self.logger.save_log(f"RUNNING INFERENCE ON {self.config['LOAD_MODEL']}")
+        self.logger.save_log(f"MODEL_SIZE: {self.config['MODEL_SIZE']}, DATASET: {self.config['DATASET']}")
+        self.logger.save_log(f"NOTES: {self.config['NOTES']}")
+        self.logger.save_log(f"--------------------------------------------\n")
+        self.get_data()
+        self.get_model()
+        self.model.load_weights(self.config['LOAD_MODEL'])
+        _, accuracy_test = self.model.evaluate(self.ds_test, steps=self.test_steps)
+
+        if self.config['DATASET'] == 'kinetics':
+            g = list(self.ds_test.take(self.test_steps).as_numpy_iterator())
+            X = [e[0] for e in g]
+            X = np.vstack(X)
+            y = [e[1] for e in g]
+            y = np.vstack(y)
+        else:
+            X, y = tuple(zip(*self.ds_test))
+
+        y_pred = np.argmax(tf.nn.softmax(self.model.predict(tf.concat(X, axis=0)), axis=-1),axis=1)
+        balanced_accuracy = sklearn.metrics.balanced_accuracy_score(tf.math.argmax(tf.concat(y, axis=0), axis=1), y_pred)
+
+        text = f"Accuracy Test: {accuracy_test} <> Balanced Accuracy: {balanced_accuracy}\n"
+        self.logger.save_log(text)
+
+        del X, y, self.ds_test, self.model
+        gc.collect()
+
+        return accuracy_test, balanced_accuracy
+    
     def do_random_search(self):
         pruner = optuna.pruners.HyperbandPruner()
         self.study = optuna.create_study(study_name='{}_random_search'.format(self.config['MODEL_NAME']),

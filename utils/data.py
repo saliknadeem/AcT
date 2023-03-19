@@ -74,14 +74,16 @@ def load_kinetics(config, fold=0):
 def load_mpose(dataset, split, verbose=False, legacy=False):
     
     if legacy:
-        return load_dataset_legacy(data_folder=f'datasets/openpose_bm/split{split}/base_vars/')
+        return load_dataset_legacy(data_folder=f'tmp/openpose_legacy/{split}/')
     
     d = MPOSE(pose_extractor=dataset, 
                     split=split, 
+                    verbose=True,
                     preprocess=None, 
                     velocities=True, 
                     remove_zip=False)
-    
+    print( d.get_labels() )
+    d.get_labels()
     if 'legacy' not in dataset:
         d.reduce_keypoints()
         d.scale_and_center()
@@ -91,6 +93,7 @@ def load_mpose(dataset, split, verbose=False, legacy=False):
         return d.get_data()
     
     elif 'openpose' in dataset:
+        
         X_train, y_train, X_test, y_test = d.get_data()
         return X_train, transform_labels(y_train), X_test, transform_labels(y_test)
     else:
@@ -154,11 +157,11 @@ def transform_labels(y):
 
 def load_dataset_legacy(data_folder, verbose=True):
     X_train = np.load(data_folder + 'X_train.npy')
-    y_train = np.load(data_folder + 'Y_train.npy', allow_pickle=True)
+    y_train = np.load(data_folder + 'y_train.npy', allow_pickle=True)
     y_train = transform_labels(y_train)
     
     X_test = np.load(data_folder + 'X_test.npy')
-    y_test = np.load(data_folder + 'Y_test.npy', allow_pickle=True)
+    y_test = np.load(data_folder + 'y_test.npy', allow_pickle=True)
     y_test = transform_labels(y_test)
     
     if verbose:

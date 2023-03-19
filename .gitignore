@@ -1,0 +1,11 @@
+.ipynb_checkpoints/
+*.mp4
+bin/
+logs/
+new_loader.ipynb
+pretrained/
+results/
+testing.ipynb
+tmp/
+utils/.ipynb_checkpoints/
+utils/__pycache__/
