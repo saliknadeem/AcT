@@ -2,6 +2,7 @@
 *.mp4
 bin/
 logs/
+logs_old/
 new_loader.ipynb
 pretrained/
 results/

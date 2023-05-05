@@ -19,6 +19,7 @@ import numpy as np
 import copy
 
 
+
 def scaled_dot_product_attention(q, k, v, mask):
     """Calculate the attention weights.
     q, k, v must have matching leading dimensions.
@@ -192,15 +193,103 @@ class Patches(tf.keras.layers.Layer):
         return patches
     
 
+#from spektral.layers import AGNNConv
+from spektral.layers import AGNNConv, GCNConv, GlobalSumPool
+from spektral.utils import normalized_laplacian, degree_matrix
+
+class GCNLayer(tf.keras.layers.Layer):
+    def __init__(self, channels, activation=None, **kwargs):
+        super().__init__(**kwargs)
+        self.channels = channels
+        self.activation = activation
+
+    def build(self, input_shape):
+        self.gcn_conv = GCNConv(self.channels, activation=self.activation)
+        super().build(input_shape)
+
+    def call(self, inputs):
+        x, a = inputs
+        batch_size = tf.shape(x)[0]
+        no_of_frames = tf.shape(x)[1]
+        nodes = tf.shape(x)[2]
+
+        # Reshape input tensor X_in to [batch_size*no_of_frames,nodes, features]
+        x = tf.reshape(x, [-1,tf.shape(x)[2], tf.shape(x)[-1]])
+
+        # Reshape adjacency matrix A_in to [batch_size*no_of_frames, nodes, nodes]
+        a = tf.reshape(a, [-1, tf.shape(a)[2], tf.shape(a)[3]])
+
+        # Apply GCNConv layer
+        output = self.gcn_conv([x, a])
+
+        # Reshape output tensor to [batch_size, no_of_frames, nodes, channels]
+        output = tf.reshape(output, [batch_size, no_of_frames, nodes, self.channels])
+        output = tf.reduce_max(output, axis=2)
+        return output
+
+    def compute_output_shape(self, input_shape):
+        return (input_shape[0], input_shape[1], self.channels)
+    
+
+class ComplexGCNLayer(tf.keras.layers.Layer):
+    def __init__(self, channels, activation='relu', **kwargs):
+        super().__init__(**kwargs)
+        self.channels = channels
+        self.activation = activation
+
+    def build(self, input_shape):
+        self.gcn_conv_1 = GCNConv(self.channels, activation=self.activation)
+        self.gcn_conv_2 = GCNConv(self.channels, activation=self.activation)
+        self.gcn_conv_3 = GCNConv(self.channels, activation=self.activation)
+        super().build(input_shape)
+
+    def call(self, inputs):
+        x, a = inputs
+        batch_size = tf.shape(x)[0]
+        no_of_frames = tf.shape(x)[1]
+        nodes = tf.shape(x)[2]
+
+        # Reshape input tensor X_in to [batch_size*no_of_frames,nodes, features]
+        x = tf.reshape(x, [-1,tf.shape(x)[2], tf.shape(x)[-1]])
+
+        # Reshape adjacency matrix A_in to [batch_size*no_of_frames, nodes, nodes]
+        a = tf.reshape(a, [-1, tf.shape(a)[2], tf.shape(a)[3]])
+
+        # Apply first GCNConv layer
+        output = self.gcn_conv_1([x, a])
+
+        # Apply second GCNConv layer
+        output = self.gcn_conv_2([output, a])
+
+        # Apply third GCNConv layer
+        output = self.gcn_conv_3([output, a])
+
+        # Reshape output tensor to [batch_size, no_of_frames, nodes, channels]
+        output = tf.reshape(output, [batch_size, no_of_frames, nodes, self.channels])
+
+        # Apply max pooling over the node dimension
+        output = tf.reduce_max(output, axis=2)
+
+        return output
+
+    def compute_output_shape(self, input_shape):
+        return (input_shape[0], input_shape[1], self.channels)
+    
 class PatchClassEmbedding(tf.keras.layers.Layer):
     def __init__(self, d_model, n_patches, pos_emb=None, kernel_initializer='he_normal', **kwargs):
         super(PatchClassEmbedding, self).__init__(**kwargs)
         self.d_model = d_model
-        self.n_tot_patches = n_patches + 1
+        self.n_tot_patches = n_patches + 1 #This is (T+1)
         self.pos_emb = pos_emb
+        #self.gcn = GCN(self.n_tot_patches, self.d_model)
+        #self.gcn = GCN(hidden_size=self.n_tot_patches, output_size=self.d_model)
+        #self.gcn = TimeGCN(64)
+        #self.gcn = GCNLayer(64)
+        self.gcn = GCNLayer(self.d_model) #ComplexGCNLayer(64)
         self.kernel_initializer = kernel_initializer
         self.kernel_initializer = tf.keras.initializers.get(kernel_initializer)
         self.class_embed = self.add_weight(shape=(1, 1, self.d_model), initializer=self.kernel_initializer, name="class_token")
+        #print('self.class_embed=',self.class_embed.shape.as_list())
         if self.pos_emb is not None:
             self.pos_emb = tf.convert_to_tensor(np.load(self.pos_emb))
             self.lap_position_embedding = tf.keras.layers.Embedding(input_dim=self.pos_emb.shape[0], output_dim=self.d_model)
@@ -218,8 +307,15 @@ class PatchClassEmbedding(tf.keras.layers.Layer):
         return dict(list(base_config.items()) + list(config.items()))
     
     def call(self, inputs):
+        inputs,X_in,A_in = inputs
+        #print('emb inputs',inputs.shape.as_list())
         x =  tf.repeat(self.class_embed, tf.shape(inputs)[0], axis=0)
         x = tf.concat((x, inputs), axis=1)
+
+        skeleton_emb = self.gcn([X_in, A_in])
+        #print('emb skeleton_emb',skeleton_emb.shape.as_list())
+
+        #print('self.pos_emb ===',self.pos_emb)
         if self.pos_emb is None:
             positions = tf.range(start=0, limit=self.n_tot_patches, delta=1)
             pe = self.position_embedding(positions)
@@ -229,5 +325,20 @@ class PatchClassEmbedding(tf.keras.layers.Layer):
             pe = tf.reshape(pe, [1, -1])
             pe = self.lap_position_embedding(pe)
             #pe = tf.reshape(pe, [self.n_tot_patches, self.d_model])
-        encoded = x + pe
+
+        # create a tensor of zeros with shape [None, 1, 64]
+        zeros_tensor = tf.zeros(shape=[tf.shape(skeleton_emb)[0], 1, self.d_model], dtype=tf.float32)
+
+        # concatenate the zeros tensor and the sk_emb tensor along axis=1
+        skeleton_emb = tf.concat([zeros_tensor, skeleton_emb], axis=1)
+        
+        #print('emb skeleton_emb',skeleton_emb.shape.as_list())
+
+        #print('pe ===',pe)
+        #print('emb x',x.shape.as_list())
+        #print('emb pe',pe.shape.as_list())
+        
+        encoded = x + skeleton_emb
+        #print('encoded FINAL',encoded.shape.as_list())
+        #exit(1)
         return encoded

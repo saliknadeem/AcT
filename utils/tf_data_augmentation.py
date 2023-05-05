@@ -3,14 +3,14 @@
 X_train, y_train, X_test, y_test = load_mpose(self.config['DATASET'], self.split, verbose=False)
 self.train_len = len(y_train)
 self.test_len = len(y_test)
-X_train, X_val, y_train, y_val = train_test_split(X_train, y_train,
+X_train, X_val, y_train, y_val = train_test_split(X_train[0], y_train,
                                                   test_size=self.config['VAL_SIZE'],
                                                   random_state=self.config['SEEDS'][self.fold],
                                                   stratify=y_train) # <- IMPORTANTE!
 
 self.ds_train = tf.data.Dataset.from_tensor_slices((X_train, y_train))
 self.ds_val = tf.data.Dataset.from_tensor_slices((X_val, y_val))
-self.ds_test = tf.data.Dataset.from_tensor_slices((X_test, y_test))
+self.ds_test = tf.data.Dataset.from_tensor_slices((X_test[0], y_test))
 
 self.ds_train = self.ds_train.map(lambda x,y : one_hot(x,y,self.config[self.config['DATASET']]['CLASSES']), 
                         num_parallel_calls=tf.data.experimental.AUTOTUNE)

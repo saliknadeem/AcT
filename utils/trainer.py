@@ -23,6 +23,8 @@ from utils.data import load_mpose, load_kinetics, random_flip, random_noise, one
 from utils.tools import CustomSchedule, CosineSchedule
 from utils.tools import Logger
 
+import tensorflow.keras.backend as K
+
 
 # TRAINER CLASS 
 class Trainer:
@@ -45,17 +47,63 @@ class Trainer:
         self.d_ff = self.d_model * 4
         self.pos_emb = self.config['POS_EMB']
 
+    def create_X_in(self,inputs):
+        batch_size = tf.shape(inputs)[0]
+        kp = tf.shape(inputs)[-1]//4
+        #transformed_input = tf.keras.layers.Reshape((batch_size,self.config[self.config['DATASET']]['FRAMES'] // self.config['SUBSAMPLE'],kp,4))(inputs)
+        #transformed_input = tf.keras.layers.Reshape((-1, inputs.shape[1], kp, 4))(inputs)
+        K = tf.keras.backend
+        transformed_input = tf.keras.layers.Reshape((K.prod(K.concatenate([[batch_size], K.shape(inputs)[1:3], [kp, 4]]))))(inputs)
+        return transformed_input
+
+    def create_adjacency_matrix_tensor(self, inputs):
+        batch_size = tf.shape(inputs)[0]
         
+        kp = self.config[self.config['DATASET']]['KEYPOINTS']
+        if kp==13:
+            edges = [ (0,1), (1,2), (1,4), (2,3), (0,4), (4,5), (5,6), (1,7), (7,8), (8,9), (7,10), (4,10), (10,11), (11,12) ]
+        else:
+            edges = [ (0,1), (1,2), (2,3), (3,4), (1,5), (5,6), (6,7), (1,8), (8,9), (9,10), (10,11), (8,12), (12,13), (13,14) ]
+        # Initialize an empty matrix
+        adj_matrix = np.zeros((kp, kp))
+        # Iterate over the edges and set the corresponding entries in the matrix to 1
+        for edge in edges:
+            adj_matrix[edge[0], edge[1]] = 1
+            adj_matrix[edge[1], edge[0]] = 1
+            
+        adj_matrix_tensor = tf.convert_to_tensor(adj_matrix, dtype=tf.float32)
+        adj_matrix_tensor = tf.expand_dims(adj_matrix_tensor, axis=0)
+        adj_matrix_tensor = tf.expand_dims(adj_matrix_tensor, axis=0)
+        adj_matrix_tensor = tf.tile(adj_matrix_tensor, [batch_size, self.config[self.config['DATASET']]['FRAMES'] // self.config['SUBSAMPLE'] , 1, 1])
+        constant_tensor = tf.ones(shape=(batch_size, self.config[self.config['DATASET']]['FRAMES'] // self.config['SUBSAMPLE'] , 13, 13))
+        constant_tensor = constant_tensor * adj_matrix_tensor
+        return constant_tensor
+
     def build_act(self, transformer):
         inputs = tf.keras.layers.Input(shape=(self.config[self.config['DATASET']]['FRAMES'] // self.config['SUBSAMPLE'], 
                                               self.config[self.config['DATASET']]['KEYPOINTS'] * self.config['CHANNELS']))
+        #print('inputs',inputs.shape.as_list())
+        X_in = tf.keras.layers.Reshape((self.config[self.config['DATASET']]['FRAMES'] // self.config['SUBSAMPLE'], 
+                                              self.config[self.config['DATASET']]['KEYPOINTS'], self.config['CHANNELS']))(inputs)
+        #X_in = self.create_X_in(inputs)
+        A_in = self.create_adjacency_matrix_tensor(inputs)
         x = tf.keras.layers.Dense(self.d_model)(inputs)
+        #print('X_in',X_in.shape.as_list())
+        #print('A_in',A_in.shape.as_list())
+        x = [x,X_in,A_in]
         x = PatchClassEmbedding(self.d_model, self.config[self.config['DATASET']]['FRAMES'] // self.config['SUBSAMPLE'], 
                                 pos_emb=None)(x)
+        #print('x after PatchClassEmbedding',x.shape.as_list())
         x = transformer(x)
+        #print('x after transformer',x.shape.as_list())
+        
         x = tf.keras.layers.Lambda(lambda x: x[:,0,:])(x)
+        #print('x after lambda',x.shape.as_list())
         x = tf.keras.layers.Dense(self.mlp_head_size)(x)
+        #print('x after mlp',x.shape.as_list())
         outputs = tf.keras.layers.Dense(self.config[self.config['DATASET']]['CLASSES'])(x)
+        #print('outputs',outputs.shape.as_list())
+        #exit(1)
         return tf.keras.models.Model(inputs, outputs)
 
     

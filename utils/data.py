@@ -71,6 +71,18 @@ def load_kinetics(config, fold=0):
     return train_gen, val_gen, test_gen, len(y_train), len(y_test)
 
 
+def create_adjacency_matrix(edges, num_nodes):
+    # Initialize an empty matrix
+    adj_matrix = np.zeros((num_nodes, num_nodes))
+    # Iterate over the edges and set the corresponding entries in the matrix to 1
+    for edge in edges:
+        adj_matrix[edge[0], edge[1]] = 1
+        adj_matrix[edge[1], edge[0]] = 1
+    return adj_matrix
+
+
+
+
 def load_mpose(dataset, split, verbose=False, legacy=False):
     
     if legacy:
@@ -78,19 +90,55 @@ def load_mpose(dataset, split, verbose=False, legacy=False):
     
     d = MPOSE(pose_extractor=dataset, 
                     split=split, 
-                    verbose=True,
+                    verbose=False,
                     preprocess=None, 
                     velocities=True, 
                     remove_zip=False)
-    print( d.get_labels() )
+    #print( d.get_labels() )
     d.get_labels()
     if 'legacy' not in dataset:
+        #d.scale_and_center()
         d.reduce_keypoints()
-        d.scale_and_center()
+        d.scale_to_unit()
+        #d.add_velocities()
+        #d.remove_confidence()
+        #d.scale_and_center()
         d.remove_confidence()
+        d.prune()
         d.flatten_features()
         #d.reduce_labels()
-        return d.get_data()
+
+        X_train, y_train, X_test, y_test = d.get_data()
+
+        
+        if (False):
+            if (X_train.shape[-1] //4 ) == 13:
+                bones = [ (0,1), (1,2), (1,4), (2,3), (0,4), (4,5), (5,6), (1,7), (7,8), (8,9), (7,10), (4,10), (10,11), (11,12) ]
+            else:
+                bones = [ (0,1), (1,2), (2,3), (3,4), (1,5), (5,6), (6,7), (1,8), (8,9), (9,10), (10,11), (8,12), (12,13), (13,14) ]
+
+            X_in_train = np.copy(X_train)
+            new_shape = ( X_train.shape[0] , X_train.shape[1] , X_train.shape[2] // 4 , 4 )
+            X_in_train = X_in_train.reshape(new_shape)
+
+            train_size=X_train.shape[0]
+            adj_train = create_adjacency_matrix(bones, X_train.shape[-1]//4 )
+            adj_train = adj_train[np.newaxis, :]
+            adj_train = np.repeat(adj_train, train_size, axis=0)
+
+            X_in_test = np.copy(X_train)
+            new_shape = ( X_test.shape[0] , X_test.shape[1] , X_test.shape[2] // 4 , 4 )
+            X_in_test = X_in_test.reshape(new_shape)
+
+            test_size=X_test.shape[0]
+            adj_test = create_adjacency_matrix(bones, X_test.shape[-1]//4 )
+            adj_test = adj_test[np.newaxis, :]
+            adj_test = np.repeat(adj_test, test_size, axis=0)
+
+            #X_train = [ X_train , X_in_train , adj_train]
+            #X_test = [ X_test , X_in_test , adj_test]
+
+        return X_train, y_train, X_test, y_test
     
     elif 'openpose' in dataset:
         

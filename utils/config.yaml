@@ -1,8 +1,7 @@
 #---- GENERAL
 GPU: 0
 VERBOSE: True
-NOTES: ""
-
+NOTES: "New dataloader, scale-to-unit, no scale_and_center, prune, skeleton_embeddings, complexGCN"
 #---- PATHS
 MODEL_DIR: 'bin/'
 RESULTS_DIR: 'results/'
@@ -12,7 +11,7 @@ LOAD_MODEL: 'pretrained/AcT_micro_1_0.h5'
 
 #---- DATASET
 SPLITS: 3
-FOLDS: 2
+FOLDS: 10
 SEEDS: [11331, 11435, 12123, 53453, 42344, 24234, 65747, 84443, 29345, 99543]
 VAL_SIZE: 0.1
 CHANNELS: 4
@@ -52,7 +51,7 @@ RN_STD: 0.03
 
 #---- MODEL
 #PATCH_SIZE: 1
-MODEL_SIZE: 'micro'
+MODEL_SIZE: 'small'
 POS_EMB: 'utils/pos_emb.npy'
 micro:        
     N_HEADS: 1
@@ -83,8 +82,8 @@ large:
 SCHEDULER: True
 N_EPOCHS: 350       
 BATCH_SIZE: 512
-WEIGHT_DECAY: 0.0001  
-WARMUP_PERC: 0.3  
+WEIGHT_DECAY: 0.0001 
+WARMUP_PERC: 0.4  
 STEP_PERC: 0.8
 LR_MULT: 1
 
