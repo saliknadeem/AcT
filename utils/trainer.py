@@ -88,10 +88,11 @@ class Trainer:
         #X_in = self.create_X_in(inputs)
         A_in = self.create_adjacency_matrix_tensor(inputs)
         x = tf.keras.layers.Dense(self.d_model)(inputs)
+        #x = tf.keras.layers.Dense(self.d_model)(x)
         #print('X_in',X_in.shape.as_list())
         #print('A_in',A_in.shape.as_list())
-        x = [x,X_in,A_in]
-        x = PatchClassEmbedding(self.d_model, self.config[self.config['DATASET']]['FRAMES'] // self.config['SUBSAMPLE'], 
+        x = [inputs,x,X_in,A_in]
+        x = PatchClassEmbedding(self.d_model, self.config, self.config[self.config['DATASET']]['FRAMES'] // self.config['SUBSAMPLE'], 
                                 pos_emb=None)(x)
         #print('x after PatchClassEmbedding',x.shape.as_list())
         x = transformer(x)
@@ -147,7 +148,7 @@ class Trainer:
             self.ds_test = tf.data.Dataset.from_generator(test_gen, output_types=('float32', 'uint8'))
             
         else:
-            X_train, y_train, X_test, y_test = load_mpose(self.config['DATASET'], self.split, 
+            X_train, y_train, X_test, y_test = load_mpose(self.config['DATASET'], self.split, self.config, 
                                                           legacy=self.config['LEGACY'], verbose=False)
             self.train_len = len(y_train)
             self.test_len = len(y_test)
@@ -241,6 +242,11 @@ class Trainer:
         self.logger.save_log(f"-----------------------------------------")
         self.logger.save_log(f"MODEL_SIZE: {self.config['MODEL_SIZE']}, DATASET: {self.config['DATASET']}")
         self.logger.save_log(f"NOTES: {self.config['NOTES']}")
+        self.logger.save_log(f"SCALE_UNIT: {self.config['SCALE_UNIT']}, SCALE_CENTER: {self.config['SCALE_CENTER']}, ")
+        self.logger.save_log(f"USE_PE: {self.config['USE_PE']}, USE_SKELE_EMB: {self.config['USE_SKELE_EMB']}, ")
+        self.logger.save_log(f"LEGACY: {self.config['LEGACY']}, N_EPOCHS: {self.config['N_EPOCHS']}")
+        self.logger.save_log(f"WEIGHT_DECAY: {self.config['WEIGHT_DECAY']}, FLIP_P: {self.config['FLIP_P']}, RN_STD: {self.config['RN_STD']}")
+        
         self.logger.save_log(f"-----------------------------------------\n")
         for split in range(1, self.config['SPLITS']+1):      
             self.logger.save_log(f"----- Start Split {split} ----\n")
@@ -268,15 +274,21 @@ class Trainer:
             self.logger.save_log(f"Balanced Accuracy std: {np.std(bal_acc_list)}")
     
     
-    def do_inference(self):
+    def do_inference(self, model='', model_size=None):
+        if model == '':
+            model = self.config['LOAD_MODEL']
+        else:
+            self.config['LOAD_MODEL'] = model
         self.logger.save_log(f"--------------------------------------------")
-        self.logger.save_log(f"RUNNING INFERENCE ON {self.config['LOAD_MODEL']}")
+        self.logger.save_log(f"RUNNING INFERENCE ON {model}")
         self.logger.save_log(f"MODEL_SIZE: {self.config['MODEL_SIZE']}, DATASET: {self.config['DATASET']}")
         self.logger.save_log(f"NOTES: {self.config['NOTES']}")
         self.logger.save_log(f"--------------------------------------------\n")
         self.get_data()
         self.get_model()
-        self.model.load_weights(self.config['LOAD_MODEL'])
+        if model_size != None:
+            self.config['MODEL_SIZE'] = model_size
+        self.model.load_weights(model)
         _, accuracy_test = self.model.evaluate(self.ds_test, steps=self.test_steps)
 
         if self.config['DATASET'] == 'kinetics':
@@ -294,10 +306,20 @@ class Trainer:
         text = f"Accuracy Test: {accuracy_test} <> Balanced Accuracy: {balanced_accuracy}\n"
         self.logger.save_log(text)
 
-        del X, y, self.ds_test, self.model
-        gc.collect()
 
-        return accuracy_test, balanced_accuracy
+        # Generate predictions (probabilities -- the output of the last layer)
+        # on new data using `predict`
+        print("Generate predictions for samples")
+        #tf.print(self.ds_test)
+        #test_X, test_Y = self.ds_test.element_spec
+        #tf.print(test_X)
+        #predictions = self.model.predict(test_X)
+        print("predictions shape:", y_pred.shape)
+
+        #del X, y, self.ds_test, self.model
+        #gc.collect()
+
+        return accuracy_test, balanced_accuracy, y, y_pred
     
     def do_random_search(self):
         pruner = optuna.pruners.HyperbandPruner()

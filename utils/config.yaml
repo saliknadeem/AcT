@@ -1,13 +1,19 @@
 #---- GENERAL
 GPU: 0
 VERBOSE: True
-NOTES: "New dataloader, scale-to-unit, no scale_and_center, prune, skeleton_embeddings, complexGCN"
+NOTES: "MS-TCN embeddings(4 dilations) (mstcn2 -> mstcn) + pe"
 #---- PATHS
 MODEL_DIR: 'bin/'
 RESULTS_DIR: 'results/'
 LOG_DIR: 'logs/'
 MODEL_NAME: 'AcT'
-LOAD_MODEL: 'pretrained/AcT_micro_1_0.h5'
+LOAD_MODEL: 'bin/AcT_micro_1_1.h5'
+
+SCALE_UNIT: False
+SCALE_CENTER: True
+USE_PE: True
+USE_SKELE_EMB: False
+LEGACY: True
 
 #---- DATASET
 SPLITS: 3
@@ -17,7 +23,7 @@ VAL_SIZE: 0.1
 CHANNELS: 4
 SUBSAMPLE: 1
 DATASET: 'openpose_legacy'
-LEGACY: True
+
 openpose:
     KEYPOINTS: 13
     CLASSES: 20
@@ -46,12 +52,12 @@ LABELS: ['standing','check-watch','cross-arms','scratch-head','sit-down','get-up
          'kicking','pointing','pick-up','bending','hands-clapping','wave2','jogging','jumping','pjump','running']
 
 #---- AUGMENTATION
-FLIP_P: 0.5
-RN_STD: 0.03
+FLIP_P: 0.50
+RN_STD: 0.05
 
 #---- MODEL
 #PATCH_SIZE: 1
-MODEL_SIZE: 'small'
+MODEL_SIZE: 'micro'
 POS_EMB: 'utils/pos_emb.npy'
 micro:        
     N_HEADS: 1
@@ -80,10 +86,10 @@ large:
 
 #---- TRAINING SETTINGS 
 SCHEDULER: True
-N_EPOCHS: 350       
+N_EPOCHS: 350
 BATCH_SIZE: 512
-WEIGHT_DECAY: 0.0001 
-WARMUP_PERC: 0.4  
+WEIGHT_DECAY: 0.0001
+WARMUP_PERC: 0.3
 STEP_PERC: 0.8
 LR_MULT: 1
 

@@ -1,6 +1,6 @@
 # Data loading and TF Dataset creation
 
-X_train, y_train, X_test, y_test = load_mpose(self.config['DATASET'], self.split, verbose=False)
+X_train, y_train, X_test, y_test = load_mpose(self.config['DATASET'], self.split, self.config, verbose=False)
 self.train_len = len(y_train)
 self.test_len = len(y_test)
 X_train, X_val, y_train, y_val = train_test_split(X_train[0], y_train,

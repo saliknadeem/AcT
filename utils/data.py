@@ -83,7 +83,7 @@ def create_adjacency_matrix(edges, num_nodes):
 
 
 
-def load_mpose(dataset, split, verbose=False, legacy=False):
+def load_mpose(dataset, split, config='', verbose=False, legacy=False):
     
     if legacy:
         return load_dataset_legacy(data_folder=f'tmp/openpose_legacy/{split}/')
@@ -99,12 +99,16 @@ def load_mpose(dataset, split, verbose=False, legacy=False):
     if 'legacy' not in dataset:
         #d.scale_and_center()
         d.reduce_keypoints()
-        d.scale_to_unit()
+        if config['SCALE_UNIT']:
+            d.scale_to_unit()
         #d.add_velocities()
         #d.remove_confidence()
-        #d.scale_and_center()
+        if config['SCALE_CENTER']:
+            d.scale_and_center()
+        else:
+            d.prune()
         d.remove_confidence()
-        d.prune()
+        #d.prune()
         d.flatten_features()
         #d.reduce_labels()
 
