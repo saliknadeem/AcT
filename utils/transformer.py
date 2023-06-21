@@ -359,6 +359,38 @@ class TemporalConv(layers.Layer):
         self.pad = (kernel_size + (kernel_size - 1) * (dilation - 1) - 1) // 2
         self.stride = stride
         self.dilation = dilation
+        
+        self.conv_dilated = layers.Conv2D(
+            out_channels,
+            kernel_size=(kernel_size, 1),
+            padding='same',
+            dilation_rate=(dilation, 1),
+            data_format='channels_first'
+        )
+        self.conv_strided = layers.Conv2D(
+            out_channels,
+            kernel_size=(1, 1),
+            padding='valid',
+            strides=(stride, 1),
+            data_format='channels_first'
+        )
+        self.bn = layers.BatchNormalization()
+
+    def call(self, x):
+        x = layers.ZeroPadding2D(padding=((self.pad, self.pad), (0, 0)))(x)
+        x = self.conv_dilated(x)
+        x = self.conv_strided(x)
+        x = self.bn(x)
+        return x
+
+
+'''
+class TemporalConv(layers.Layer):
+    def __init__(self, in_channels, out_channels, kernel_size, stride=1, dilation=1):
+        super(TemporalConv, self).__init__()
+        self.pad = (kernel_size + (kernel_size - 1) * (dilation - 1) - 1) // 2
+        self.stride = stride
+        self.dilation = dilation
         self.in_channels = in_channels
         self.out_channels = out_channels
         self.kernel_size=kernel_size
@@ -376,7 +408,7 @@ class TemporalConv(layers.Layer):
         )
 
     def call(self, x):
-        if self.dilation > 1:
+        if self.dilation >= 1:
             x = self._apply_temporal_dilation(x)
         if self.stride > 1:
             x = self._apply_temporal_stride(x)
@@ -407,6 +439,10 @@ class TemporalConv(layers.Layer):
         )
         return x
     
+'''
+
+
+
 
 '''
 class TemporalConv(layers.Layer):
@@ -562,7 +598,7 @@ class MultiScale_TemporalConv(keras.Model):
         branch_outs = []
         for tempconv in self.branches:
             out = tempconv(x)
-            #print('===out',np.shape(out))
+            print('===out',np.shape(out))
             branch_outs.append(out)
             
         #print("TCN_out",np.shape(out) )
@@ -585,13 +621,13 @@ class PatchClassEmbedding(tf.keras.layers.Layer):
         #self.gcn = GCN(hidden_size=self.n_tot_patches, output_size=self.d_model)
         #self.gcn = TimeGCN(64)
         #self.gcn = GCNLayer(64)
-        self.gcn = GCNLayer(self.d_model) #ComplexGCNLayer(64)
-        self.tcn = TemporalConvNetwork(num_layers=4, filters=16, kernel_size=3, dilation_rates=[1,2,4,8], hidden_size=self.d_model)
+        #self.gcn = GCNLayer(self.d_model) #ComplexGCNLayer(64)
+        #self.tcn = TemporalConvNetwork(num_layers=4, filters=16, kernel_size=3, dilation_rates=[1,2,4,8], hidden_size=self.d_model)
         self.kernel_initializer = kernel_initializer
         self.kernel_initializer = tf.keras.initializers.get(kernel_initializer)
         self.class_embed = self.add_weight(shape=(1, 1, self.d_model), initializer=self.kernel_initializer, name="class_token")
         self.MS_TCN = MultiScale_TemporalConv(30,30)
-        #self.MS_TCN2 = MultiScale_TemporalConv(30,30, stride=2)
+        self.MS_TCN2 = MultiScale_TemporalConv(30,30, stride=2)
         
         self.dense = tf.keras.layers.Dense(self.d_model)
         #print('self.class_embed=',self.class_embed.shape.as_list())
@@ -653,8 +689,8 @@ class PatchClassEmbedding(tf.keras.layers.Layer):
             #x = np.random.randn(32, 288, 100, 20)
 
             #print("MS_TCN embeddings",x.shape.as_list() )  
-            skeleton_emb = self.MS_TCN(reshaped_x)
-            #skeleton_emb = self.MS_TCN(skeleton_emb)
+            skeleton_emb = self.MS_TCN2(reshaped_x)
+            skeleton_emb = self.MS_TCN(skeleton_emb)
             #print("MS_TCN embeddings",skeleton_emb.shape.as_list() )
             skeleton_emb = tf.reshape(skeleton_emb, (-1, 30, 52))
             #skeleton_emb = self.tcn(org_inputs)
