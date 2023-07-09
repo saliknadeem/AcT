@@ -1,7 +1,7 @@
 #---- GENERAL
 GPU: 0
 VERBOSE: True
-NOTES: "MS-TCN embeddings(4 dilations) (mstcn2 -> mstcn) + pe"
+NOTES: "MS-TCN as input (mstcn -> mstcn) + pe"
 #---- PATHS
 MODEL_DIR: 'bin/'
 RESULTS_DIR: 'results/'
@@ -12,7 +12,7 @@ LOAD_MODEL: 'bin/AcT_micro_1_1.h5'
 SCALE_UNIT: False
 SCALE_CENTER: True
 USE_PE: True
-USE_SKELE_EMB: False
+USE_SKELE_EMB: True
 LEGACY: True
 
 #---- DATASET

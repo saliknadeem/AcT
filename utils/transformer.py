@@ -18,6 +18,8 @@ import tensorflow as tf
 import numpy as np
 import copy
 
+from MS_TCN import MultiScale_TemporalConv
+from MS_GCN import MultiScale_GraphConv
 
 
 def scaled_dot_product_attention(q, k, v, mask):
@@ -192,424 +194,6 @@ class Patches(tf.keras.layers.Layer):
         patches = tf.reshape(patches, [batch_size, -1, patch_dims])
         return patches
     
-
-#from spektral.layers import AGNNConv
-from spektral.layers import AGNNConv, GCNConv, GlobalSumPool
-from spektral.utils import normalized_laplacian, degree_matrix
-
-class GCNLayer(tf.keras.layers.Layer):
-    def __init__(self, channels, activation=None, **kwargs):
-        super().__init__(**kwargs)
-        self.channels = channels
-        self.activation = activation
-
-    def build(self, input_shape):
-        self.gcn_conv = GCNConv(self.channels, activation=self.activation)
-        super().build(input_shape)
-
-    def call(self, inputs):
-        x, a = inputs
-        batch_size = tf.shape(x)[0]
-        no_of_frames = tf.shape(x)[1]
-        nodes = tf.shape(x)[2]
-
-        # Reshape input tensor X_in to [batch_size*no_of_frames,nodes, features]
-        x = tf.reshape(x, [-1,tf.shape(x)[2], tf.shape(x)[-1]])
-
-        # Reshape adjacency matrix A_in to [batch_size*no_of_frames, nodes, nodes]
-        a = tf.reshape(a, [-1, tf.shape(a)[2], tf.shape(a)[3]])
-
-        # Apply GCNConv layer
-        output = self.gcn_conv([x, a])
-
-        # Reshape output tensor to [batch_size, no_of_frames, nodes, channels]
-        output = tf.reshape(output, [batch_size, no_of_frames, nodes, self.channels])
-        output = tf.reduce_max(output, axis=2)
-        return output
-
-    def compute_output_shape(self, input_shape):
-        return (input_shape[0], input_shape[1], self.channels)
-    
-
-
-#import tensorflow as tf
-from tensorflow import keras
-from tensorflow.keras.layers import Conv1D, Activation, LayerNormalization
-
-class TemporalConvLayer(keras.layers.Layer):
-    def __init__(self, filters, kernel_size, dilation_rate, activation='relu', **kwargs):
-        super(TemporalConvLayer, self).__init__(**kwargs)
-        self.filters = filters
-        self.kernel_size = kernel_size
-        self.dilation_rate = dilation_rate
-        self.activation = keras.activations.get(activation)
-        self.conv1d = Conv1D(filters, kernel_size, padding='causal', dilation_rate=dilation_rate)
-        self.norm = LayerNormalization()
-
-    def call(self, inputs):
-        x = self.conv1d(inputs)
-        x = self.norm(x)
-        x = self.activation(x)
-        return x
-
-
-class TemporalConvNetwork(keras.layers.Layer):
-    def __init__(self, num_layers, filters, kernel_size, dilation_rates, hidden_size, **kwargs):
-        super(TemporalConvNetwork, self).__init__(**kwargs)
-        self.num_layers = num_layers
-        self.filters = filters
-        self.kernel_size = kernel_size
-        self.dilation_rates = dilation_rates
-        self.hidden_size = hidden_size
-        self.conv_layers = []
-
-        for i in range(num_layers):
-            dilation_rate = dilation_rates[i % len(dilation_rates)]
-            conv_layer = TemporalConvLayer(filters, kernel_size, dilation_rate)
-            self.conv_layers.append(conv_layer)
-
-        self.final_conv = Conv1D(hidden_size, 1)
-
-    def call(self, inputs):
-        x = inputs
-
-        for i in range(self.num_layers):
-            x = self.conv_layers[i](x)
-
-        x = self.final_conv(x)
-        return x
-
-
-class ComplexGCNLayer(tf.keras.layers.Layer):
-    def __init__(self, channels, activation='relu', **kwargs):
-        super().__init__(**kwargs)
-        self.channels = channels
-        self.activation = activation
-
-    def build(self, input_shape):
-        self.gcn_conv_1 = GCNConv(self.channels, activation=self.activation)
-        self.gcn_conv_2 = GCNConv(self.channels, activation=self.activation)
-        self.gcn_conv_3 = GCNConv(self.channels, activation=self.activation)
-        super().build(input_shape)
-
-    def call(self, inputs):
-        x, a = inputs
-        batch_size = tf.shape(x)[0]
-        no_of_frames = tf.shape(x)[1]
-        nodes = tf.shape(x)[2]
-
-        # Reshape input tensor X_in to [batch_size*no_of_frames,nodes, features]
-        x = tf.reshape(x, [-1,tf.shape(x)[2], tf.shape(x)[-1]])
-
-        # Reshape adjacency matrix A_in to [batch_size*no_of_frames, nodes, nodes]
-        a = tf.reshape(a, [-1, tf.shape(a)[2], tf.shape(a)[3]])
-
-        # Apply first GCNConv layer
-        output = self.gcn_conv_1([x, a])
-
-        # Apply second GCNConv layer
-        output = self.gcn_conv_2([output, a])
-
-        # Apply third GCNConv layer
-        output = self.gcn_conv_3([output, a])
-
-        # Reshape output tensor to [batch_size, no_of_frames, nodes, channels]
-        output = tf.reshape(output, [batch_size, no_of_frames, nodes, self.channels])
-
-        # Apply max pooling over the node dimension
-        output = tf.reduce_max(output, axis=2)
-
-        return output
-
-    def compute_output_shape(self, input_shape):
-        return (input_shape[0], input_shape[1], self.channels)
-    
-
-
-#import tensorflow as tf
-from tensorflow import keras
-from tensorflow.keras import layers
-
-'''
-class TemporalConv(layers.Layer):
-    def __init__(self, in_channels, out_channels, kernel_size, stride=1, dilation=1):
-        super(TemporalConv, self).__init__()
-        self.pad = (kernel_size + (kernel_size - 1) * (dilation - 1) - 1) // 2
-        self.stride=stride
-        self.dilation=dilation
-        self.conv_d = layers.Conv2D(
-            out_channels,
-            kernel_size=(kernel_size, 1),
-            padding='same',  # Set padding to 'valid'
-            strides=(stride, 1),
-            dilation_rate=(dilation, 1),
-            data_format='channels_first')
-        self.bn = layers.BatchNormalization()
-
-    def call(self, x):
-        x = layers.ZeroPadding2D(padding=((self.pad, self.pad), (0, 0)))(x)  # Apply padding
-        x = self.conv_d(x)
-        x = self.bn(x)
-        return x
-'''
-
-class TemporalConv(layers.Layer):
-    def __init__(self, in_channels, out_channels, kernel_size, stride=1, dilation=1):
-        super(TemporalConv, self).__init__()
-        self.pad = (kernel_size + (kernel_size - 1) * (dilation - 1) - 1) // 2
-        self.stride = stride
-        self.dilation = dilation
-        
-        self.conv_dilated = layers.Conv2D(
-            out_channels,
-            kernel_size=(kernel_size, 1),
-            padding='same',
-            dilation_rate=(dilation, 1),
-            data_format='channels_first'
-        )
-        self.conv_strided = layers.Conv2D(
-            out_channels,
-            kernel_size=(1, 1),
-            padding='valid',
-            strides=(stride, 1),
-            data_format='channels_first'
-        )
-        self.bn = layers.BatchNormalization()
-
-    def call(self, x):
-        x = layers.ZeroPadding2D(padding=((self.pad, self.pad), (0, 0)))(x)
-        x = self.conv_dilated(x)
-        x = self.conv_strided(x)
-        x = self.bn(x)
-        return x
-
-
-'''
-class TemporalConv(layers.Layer):
-    def __init__(self, in_channels, out_channels, kernel_size, stride=1, dilation=1):
-        super(TemporalConv, self).__init__()
-        self.pad = (kernel_size + (kernel_size - 1) * (dilation - 1) - 1) // 2
-        self.stride = stride
-        self.dilation = dilation
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        self.kernel_size=kernel_size
-        self.conv_d = None
-        self.bn = layers.BatchNormalization()
-
-    def build(self, input_shape):
-        in_channels = input_shape[1]
-        kernel_shape = (self.kernel_size, 1, in_channels, self.out_channels)
-        self.conv_d = self.add_weight(
-            name='conv_d',
-            shape=kernel_shape,
-            initializer='glorot_uniform',
-            trainable=True,
-        )
-
-    def call(self, x):
-        if self.dilation >= 1:
-            x = self._apply_temporal_dilation(x)
-        if self.stride > 1:
-            x = self._apply_temporal_stride(x)
-        x = self.bn(x)
-        return x
-
-    def _apply_temporal_stride(self, x):
-        stride_shape = (self.stride, 1)
-        x = tf.nn.convolution(
-            input=x,
-            filters=self.conv_d,
-            strides=stride_shape,
-            padding='VALID',
-            data_format='NCHW',
-        )
-        return x
-
-    def _apply_temporal_dilation(self, x):
-        dilation_shape = (self.dilation, 1)
-        x = tf.pad(x, [[0, 0], [0, 0], [self.pad, self.pad], [0, 0]])  # Apply padding
-        x = tf.nn.convolution(
-            input=x,
-            filters=self.conv_d,
-            strides=(1, 1),
-            padding='VALID',
-            dilations=dilation_shape,
-            data_format='NCHW',
-        )
-        return x
-    
-'''
-
-
-
-
-'''
-class TemporalConv(layers.Layer):
-    def __init__(self, in_channels, out_channels, kernel_size, stride=1, dilation=1):
-        super(TemporalConv, self).__init__()
-        self.pad = (kernel_size + (kernel_size - 1) * (dilation - 1) - 1) // 2
-        self.stride = stride
-        self.dilation = dilation
-        self.in_channels = in_channels
-        self.out_channels = out_channels
-        self.kernel_size=kernel_size
-        self.conv_d = None
-        self.bn = layers.BatchNormalization()
-
-    def build(self, input_shape):
-        in_channels = input_shape[1]
-        kernel_shape = (self.kernel_size, 1, self.in_channels, self.out_channels)
-        strides = (self.stride, 1)
-        dilations = (self.dilation, 1)
-        self.conv_d = self.add_weight(
-            name='conv_d',
-            shape=kernel_shape,
-            initializer='glorot_uniform',
-            trainable=True,
-        )
-
-    def call(self, x):
-        x = tf.pad(x, [[0, 0], [0, 0], [self.pad, self.pad], [0, 0]])  # Apply padding
-        x = tf.nn.convolution(
-            input=x,
-            filters=self.conv_d,
-            strides=(self.stride, 1),
-            padding='VALID',
-            dilations=(self.dilation, 1),
-            data_format='NCHW',
-        )
-        x = self.bn(x)
-        return x
-'''
-
-
-'''
-class TemporalConv(layers.Layer):
-    def __init__(self, in_channels, out_channels, kernel_size, stride=1, dilation=1):
-        super(TemporalConv, self).__init__()
-        self.pad = (kernel_size + (kernel_size - 1) * (dilation - 1) - 1) // 2
-        self.stride=stride
-        self.dilation=dilation
-        self.padding = 'same' if self.stride > 1 else 'valid'
-        if (stride ==1 and dilation==1) or ( stride>1 and dilation==1) or (stride==1 and dilation>1):
-            self.conv_d = layers.Conv2D(
-                out_channels,
-                kernel_size=(kernel_size, 1),
-                padding=self.padding,  # Set padding to 'valid'
-                strides=(stride, 1),
-                dilation_rate=(dilation, 1),
-                data_format='channels_first')
-        else:
-            self.conv_d = layers.Conv2D(
-                out_channels,
-                kernel_size=(kernel_size, 1),
-                padding=self.padding,  # Set padding to 'valid'
-                strides=(1, 1),
-                dilation_rate=(dilation, 1),
-                data_format='channels_first')
-            self.conv_s = layers.MaxPooling2D(pool_size=(stride, 1), strides=(stride, 1),data_format='channels_first')
-
-        self.bn = layers.BatchNormalization()
-
-    def call(self, x):
-        x = layers.ZeroPadding2D(padding=((self.pad, self.pad), (0, 0)))(x)  # Apply padding
-        if self.stride >1 and self.dilation>1:
-            #x = layers.ZeroPadding2D(padding=((self.pad, self.pad), (0, 0)))(x)
-            x = self.conv_s(x)
-        x = self.conv_d(x)
-        x = self.bn(x)
-        return x
-'''
-
-
-class MultiScale_TemporalConv(keras.Model):
-    def __init__(self,
-                 in_channels,
-                 out_channels,
-                 kernel_size=3,
-                 stride=1,
-                 dilations=[1,2,3,4],
-                 residual=True,
-                 residual_kernel_size=1,
-                 activation='relu'):
-
-        super(MultiScale_TemporalConv, self).__init__()
-        assert out_channels % (len(dilations) + 2) == 0, '# out channels should be multiples of # branches'
-
-        # Multiple branches of temporal convolution
-        self.num_branches = len(dilations) + 2
-        branch_channels = out_channels // self.num_branches
-
-        # Temporal Convolution branches
-        self.branches = []
-        for dilation in dilations:
-            self.branches.append(
-                keras.Sequential([
-                    layers.Conv2D(
-                        branch_channels,
-                        kernel_size=1,
-                        padding='valid',
-                        data_format='channels_first'),
-                    layers.BatchNormalization(),
-                    layers.Activation(activation),
-                    TemporalConv(
-                        branch_channels,
-                        branch_channels,
-                        kernel_size=kernel_size,
-                        stride=stride,
-                        dilation=dilation)
-                ])
-            )
-
-        # Additional Max & 1x1 branch
-        self.branches.append(
-            keras.Sequential([
-                layers.Conv2D(branch_channels, kernel_size=1, padding='valid',data_format='channels_first'),
-                layers.BatchNormalization(),
-                layers.Activation(activation),
-                layers.MaxPool2D(pool_size=(3,1), strides=(stride,1), padding='same'),
-                layers.BatchNormalization()
-            ])
-        )
-
-        self.branches.append(
-            keras.Sequential([
-                layers.Conv2D(branch_channels, kernel_size=1, padding='valid', strides=(stride,1),data_format='channels_first'),
-                layers.BatchNormalization()
-            ])
-        )
-
-        # Residual connection
-        if not residual:
-            self.residual = lambda x: 0
-        elif (in_channels == out_channels) and (stride == 1):
-            self.residual = lambda x: x
-        else:
-            self.residual = TemporalConv(in_channels, out_channels, kernel_size=residual_kernel_size, stride=stride)
-
-        self.act = layers.Activation(activation)
-
-    def call(self, x):
-        # Input dim: (N,C,T,V)
-        #print("TCN_x",np.shape(x) )
-        res = self.residual(x)
-        #print("TCN_res",np.shape(res) )
-        branch_outs = []
-        for tempconv in self.branches:
-            out = tempconv(x)
-            print('===out',np.shape(out))
-            branch_outs.append(out)
-            
-        #print("TCN_out",np.shape(out) )
-        out = tf.concat(branch_outs, axis=1)
-        #print("TCN_out+concat",np.shape(out) )
-        #print('===out==',np.shape(out))
-        out += res
-        out = self.act(out)
-        return out
-
-
 class PatchClassEmbedding(tf.keras.layers.Layer):
     def __init__(self, d_model, config, n_patches, pos_emb=None, kernel_initializer='he_normal', **kwargs):
         super(PatchClassEmbedding, self).__init__(**kwargs)
@@ -617,17 +201,13 @@ class PatchClassEmbedding(tf.keras.layers.Layer):
         self.n_tot_patches = n_patches + 1 #This is (T+1)
         self.pos_emb = pos_emb
         self.config = config
-        #self.gcn = GCN(self.n_tot_patches, self.d_model)
-        #self.gcn = GCN(hidden_size=self.n_tot_patches, output_size=self.d_model)
-        #self.gcn = TimeGCN(64)
-        #self.gcn = GCNLayer(64)
-        #self.gcn = GCNLayer(self.d_model) #ComplexGCNLayer(64)
-        #self.tcn = TemporalConvNetwork(num_layers=4, filters=16, kernel_size=3, dilation_rates=[1,2,4,8], hidden_size=self.d_model)
+        self.batch_size=config['BATCH_SIZE']
         self.kernel_initializer = kernel_initializer
         self.kernel_initializer = tf.keras.initializers.get(kernel_initializer)
         self.class_embed = self.add_weight(shape=(1, 1, self.d_model), initializer=self.kernel_initializer, name="class_token")
-        self.MS_TCN = MultiScale_TemporalConv(30,30)
-        self.MS_TCN2 = MultiScale_TemporalConv(30,30, stride=2)
+        self.MS_TCN = MultiScale_TemporalConv(30,30,stride=1)
+        self.MS_TCN1 = MultiScale_TemporalConv(30,30,stride=1)
+        #self.MS_TCN2 = MultiScale_TemporalConv(30,30, stride=2)
         
         self.dense = tf.keras.layers.Dense(self.d_model)
         #print('self.class_embed=',self.class_embed.shape.as_list())
@@ -646,7 +226,7 @@ class PatchClassEmbedding(tf.keras.layers.Layer):
         
         base_config = super(PatchClassEmbedding, self).get_config()
         return dict(list(base_config.items()) + list(config.items()))
-    
+
     def call(self, inputs):
         org_inputs,inputs,X_in,A_in = inputs
         #('inputs',inputs.shape.as_list())
@@ -689,10 +269,11 @@ class PatchClassEmbedding(tf.keras.layers.Layer):
             #x = np.random.randn(32, 288, 100, 20)
 
             #print("MS_TCN embeddings",x.shape.as_list() )  
-            skeleton_emb = self.MS_TCN2(reshaped_x)
+            skeleton_emb = self.MS_TCN1(reshaped_x)
+            #print("MS_TCN2 out skeleton_emb",skeleton_emb.shape.as_list() ) 
             skeleton_emb = self.MS_TCN(skeleton_emb)
             #print("MS_TCN embeddings",skeleton_emb.shape.as_list() )
-            skeleton_emb = tf.reshape(skeleton_emb, (-1, 30, 52))
+            skeleton_emb = tf.reshape(skeleton_emb, (-1, 30, 13*4))
             #skeleton_emb = self.tcn(org_inputs)
             #print("MS_TCN embeddings",skeleton_emb.shape.as_list() )
             skeleton_emb = self.dense(skeleton_emb)
@@ -707,6 +288,16 @@ class PatchClassEmbedding(tf.keras.layers.Layer):
             #print("base class tensor",zeros_tensor.shape.as_list() )
             #x = tf.concat((x, inputs), axis=1)
             zeros_tensor = tf.zeros(shape=[tf.shape(skeleton_emb)[0], 1, self.d_model], dtype=tf.float32)
+            #zeros_tensor = tf.Variable(tf.zeros(shape=[tf.shape(skeleton_emb)[0], 1, self.d_model], dtype=tf.float32), trainable=True)
+            #skeleton_emb_shape = tf.shape(skeleton_emb)
+            #shape = [skeleton_emb_shape[0], 1, self.d_model]
+            #zeros_tensor = create_trainable_variable(shape)
+
+            # Get the dynamic batch size
+            #batch_size = tf.shape(skeleton_emb)[0]
+
+            #skeleton_emb = tf.keras.layers.Concatenate()([zeros_tensor, skeleton_emb])
+       
             #print("zeros_tensor",zeros_tensor.shape.as_list() )
             skeleton_emb = tf.concat([zeros_tensor, skeleton_emb], axis=1)
             #print("skeleton_emb",skeleton_emb.shape.as_list() )
@@ -716,7 +307,9 @@ class PatchClassEmbedding(tf.keras.layers.Layer):
         #print('emb x',x.shape.as_list())
         #print('emb pe',pe.shape.as_list())
         if self.config['USE_SKELE_EMB']:
-            x = x+skeleton_emb
+            x =  tf.repeat(self.class_embed, tf.shape(skeleton_emb)[0], axis=0)
+            x = tf.concat((x, skeleton_emb), axis=1)
+            #x = x + skeleton_emb
         if self.config['USE_PE']:
             x = x + pe
 
