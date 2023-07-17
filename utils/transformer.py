@@ -18,8 +18,8 @@ import tensorflow as tf
 import numpy as np
 import copy
 
-from MS_TCN import MultiScale_TemporalConv
-from MS_GCN import MultiScale_GraphConv
+from .MS_TCN import MultiScale_TemporalConv
+from .MS_GCN import MultiScale_GraphConv
 
 
 def scaled_dot_product_attention(q, k, v, mask):
@@ -195,7 +195,7 @@ class Patches(tf.keras.layers.Layer):
         return patches
     
 class PatchClassEmbedding(tf.keras.layers.Layer):
-    def __init__(self, d_model, config, n_patches, pos_emb=None, kernel_initializer='he_normal', **kwargs):
+    def __init__(self, d_model, config, n_patches, A_binary, pos_emb=None, kernel_initializer='he_normal', **kwargs):
         super(PatchClassEmbedding, self).__init__(**kwargs)
         self.d_model = d_model
         self.n_tot_patches = n_patches + 1 #This is (T+1)
@@ -205,9 +205,12 @@ class PatchClassEmbedding(tf.keras.layers.Layer):
         self.kernel_initializer = kernel_initializer
         self.kernel_initializer = tf.keras.initializers.get(kernel_initializer)
         self.class_embed = self.add_weight(shape=(1, 1, self.d_model), initializer=self.kernel_initializer, name="class_token")
-        self.MS_TCN = MultiScale_TemporalConv(30,30,stride=1)
+
+        self.MS_GCN = MultiScale_GraphConv(num_scales=8, in_channels=4, out_channels=30, A_binary=A_binary, disentangled_agg=True)
+        #self.MS_TCN = MultiScale_TemporalConv(30,30,stride=1)
+        self.MS_TCN2 = MultiScale_TemporalConv(30,30, stride=2)
         self.MS_TCN1 = MultiScale_TemporalConv(30,30,stride=1)
-        #self.MS_TCN2 = MultiScale_TemporalConv(30,30, stride=2)
+        
         
         self.dense = tf.keras.layers.Dense(self.d_model)
         #print('self.class_embed=',self.class_embed.shape.as_list())
@@ -259,21 +262,28 @@ class PatchClassEmbedding(tf.keras.layers.Layer):
             #("inputs",inputs.shape.as_list() )
             #print("org_inputs",org_inputs.shape.as_list() )
             reshaped_x = tf.reshape(org_inputs, (-1, 30, 13, 4))
+            reshaped_x = tf.transpose(reshaped_x, perm=[0, 3, 1, 2])
+
             #skeleton_emb = self.MS_TCN(reshaped_x)
             #skeleton_emb = self.tcn(org_inputs)
             #print("MS_TCN embeddings",skeleton_emb.shape.as_list() )
             
             #mstcn = MultiScale_TemporalConv(288, 288)
             #x = torch.randn(32, 288, 100, 20)
-
             #x = np.random.randn(32, 288, 100, 20)
 
             #print("MS_TCN embeddings",x.shape.as_list() )  
-            skeleton_emb = self.MS_TCN1(reshaped_x)
+            skeleton_emb = self.MS_GCN( reshaped_x )
+            #print("MS_GCN embeddings",skeleton_emb.shape.as_list())
+            skeleton_emb = self.MS_TCN2(reshaped_x)
+            #print("MS_TCN2 embeddings",skeleton_emb.shape.as_list())
             #print("MS_TCN2 out skeleton_emb",skeleton_emb.shape.as_list() ) 
-            skeleton_emb = self.MS_TCN(skeleton_emb)
-            #print("MS_TCN embeddings",skeleton_emb.shape.as_list() )
-            skeleton_emb = tf.reshape(skeleton_emb, (-1, 30, 13*4))
+            skeleton_emb = self.MS_TCN1(skeleton_emb)
+            #print("MS_TCN1 embeddings",skeleton_emb.shape.as_list())
+
+            skeleton_emb = tf.transpose(skeleton_emb, perm=[0, 2, 3, 1])
+            
+            skeleton_emb = tf.reshape(skeleton_emb, (-1, 30, 30*2))
             #skeleton_emb = self.tcn(org_inputs)
             #print("MS_TCN embeddings",skeleton_emb.shape.as_list() )
             skeleton_emb = self.dense(skeleton_emb)
@@ -287,7 +297,10 @@ class PatchClassEmbedding(tf.keras.layers.Layer):
             #zeros_tensor =  tf.repeat(self.class_embed, tf.shape(inputs)[0], axis=0)
             #print("base class tensor",zeros_tensor.shape.as_list() )
             #x = tf.concat((x, inputs), axis=1)
-            zeros_tensor = tf.zeros(shape=[tf.shape(skeleton_emb)[0], 1, self.d_model], dtype=tf.float32)
+
+
+            
+
             #zeros_tensor = tf.Variable(tf.zeros(shape=[tf.shape(skeleton_emb)[0], 1, self.d_model], dtype=tf.float32), trainable=True)
             #skeleton_emb_shape = tf.shape(skeleton_emb)
             #shape = [skeleton_emb_shape[0], 1, self.d_model]
@@ -299,7 +312,12 @@ class PatchClassEmbedding(tf.keras.layers.Layer):
             #skeleton_emb = tf.keras.layers.Concatenate()([zeros_tensor, skeleton_emb])
        
             #print("zeros_tensor",zeros_tensor.shape.as_list() )
+
+            ### Remove this for direct input
+            zeros_tensor = tf.zeros(shape=[tf.shape(skeleton_emb)[0], 1, self.d_model], dtype=tf.float32)
             skeleton_emb = tf.concat([zeros_tensor, skeleton_emb], axis=1)
+
+
             #print("skeleton_emb",skeleton_emb.shape.as_list() )
         #print('emb skeleton_emb',skeleton_emb.shape.as_list())
 
@@ -307,9 +325,10 @@ class PatchClassEmbedding(tf.keras.layers.Layer):
         #print('emb x',x.shape.as_list())
         #print('emb pe',pe.shape.as_list())
         if self.config['USE_SKELE_EMB']:
-            x =  tf.repeat(self.class_embed, tf.shape(skeleton_emb)[0], axis=0)
-            x = tf.concat((x, skeleton_emb), axis=1)
-            #x = x + skeleton_emb
+            #x =  tf.repeat(self.class_embed, tf.shape(skeleton_emb)[0], axis=0)
+            #x = tf.concat((x, skeleton_emb), axis=1)
+            ### Remove this for direct input
+            x = x + skeleton_emb
         if self.config['USE_PE']:
             x = x + pe
 

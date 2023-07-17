@@ -51,3 +51,18 @@ def get_adjacency_matrix(edges, num_nodes):
     for edge in edges:
         A[edge] = 1.
     return A
+
+
+class AdjMatrixGraph:
+    def __init__(self, *args, **kwargs):
+        num_node = 13
+        inward_ori_index = [ (0,1), (1,2), (1,4), (2,3), (0,4), (4,5), (5,6), (1,7), (7,8), (8,9), (7,10), (4,10), (10,11), (11,12) ]
+        inward = [(i - 1, j - 1) for (i, j) in inward_ori_index]
+        outward = [(j, i) for (i, j) in inward]
+        neighbor = inward + outward
+        self.edges = neighbor
+        self.num_nodes = num_node
+        self.self_loops = [(i, i) for i in range(self.num_nodes)]
+        self.A_binary = get_adjacency_matrix(self.edges, self.num_nodes)
+        self.A_binary_with_I = get_adjacency_matrix(self.edges + self.self_loops, self.num_nodes)
+        self.A = normalize_adjacency_matrix(self.A_binary)

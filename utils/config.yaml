@@ -1,7 +1,7 @@
 #---- GENERAL
 GPU: 0
 VERBOSE: True
-NOTES: "MS-TCN as input (mstcn -> mstcn) + pe"
+NOTES: " MS_GCN>MS_TCN2>1 embeddings + pe -- num_scales=8, in_channels=4, out_channels=30" 
 #---- PATHS
 MODEL_DIR: 'bin/'
 RESULTS_DIR: 'results/'
@@ -9,14 +9,14 @@ LOG_DIR: 'logs/'
 MODEL_NAME: 'AcT'
 LOAD_MODEL: 'bin/AcT_micro_1_1.h5'
 
-SCALE_UNIT: False
+SCALE_UNIT: True
 SCALE_CENTER: True
 USE_PE: True
 USE_SKELE_EMB: True
 LEGACY: True
 
 #---- DATASET
-SPLITS: 3
+SPLITS: 1
 FOLDS: 10
 SEEDS: [11331, 11435, 12123, 53453, 42344, 24234, 65747, 84443, 29345, 99543]
 VAL_SIZE: 0.1
@@ -53,11 +53,11 @@ LABELS: ['standing','check-watch','cross-arms','scratch-head','sit-down','get-up
 
 #---- AUGMENTATION
 FLIP_P: 0.50
-RN_STD: 0.05
+RN_STD: 0.03
 
 #---- MODEL
 #PATCH_SIZE: 1
-MODEL_SIZE: 'micro'
+MODEL_SIZE: 'small'
 POS_EMB: 'utils/pos_emb.npy'
 micro:        
     N_HEADS: 1
@@ -89,7 +89,7 @@ SCHEDULER: True
 N_EPOCHS: 350
 BATCH_SIZE: 512
 WEIGHT_DECAY: 0.0001
-WARMUP_PERC: 0.3
+WARMUP_PERC: 0.4
 STEP_PERC: 0.8
 LR_MULT: 1
 

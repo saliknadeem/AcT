@@ -13,6 +13,7 @@ class TemporalConv(layers.Layer):
     def __init__(self, in_channels, out_channels, kernel_size, stride=1, dilation=1):
         super(TemporalConv, self).__init__()
         self.pad = (kernel_size + (kernel_size - 1) * (dilation - 1) - 1) // 2
+        #print('padding', self.pad, 'kernel_size', kernel_size, 'dilation', dilation)
         
         self.out_channels = out_channels
         self.kernel_size = (kernel_size,1)
@@ -20,12 +21,11 @@ class TemporalConv(layers.Layer):
         self.dilation = dilation
         self.padding = 'same'
 
-
     def build(self, input_shape):
         self.conv_frames = tf.keras.layers.Conv2D(self.out_channels, self.kernel_size,
-                                                  strides=(self.stride, 1), padding=self.padding,data_format='channels_first')
+                                                  strides=(self.stride, 1), padding=self.padding, data_format='channels_last')
         self.atrous_conv_frames = tf.keras.layers.Conv2D(self.out_channels, self.kernel_size,
-                                                         dilation_rate=(self.dilation, 1), padding=self.padding,data_format='channels_first')
+                                                         dilation_rate=(self.dilation, 1), padding=self.padding, data_format='channels_last')
         super(TemporalConv, self).build(input_shape)
 
         self.bn = layers.BatchNormalization()
@@ -33,7 +33,7 @@ class TemporalConv(layers.Layer):
     def call(self, x):
         #x = tf.pad(x, [[0, 0], [self.pad, self.pad], [self.pad, self.pad], [0, 0]])
         #print('===x in temp',np.shape(x))
-        x = layers.ZeroPadding2D(padding=((self.pad, self.pad), (0,0) ))(x)  # Apply padding
+        x = layers.ZeroPadding2D(padding=((0, 0), (0,0) ))(x)  # Apply padding
         #print('===x with padding',np.shape(x))
         x = self.conv_frames(x)
         #print('===x after stride',np.shape(x))
@@ -70,7 +70,7 @@ class MultiScale_TemporalConv(keras.Model):
                         branch_channels,
                         kernel_size=1,
                         padding='valid',
-                        data_format='channels_first'),
+                        data_format='channels_last'),
                     layers.BatchNormalization(),
                     layers.Activation(activation),
                     TemporalConv(
@@ -85,7 +85,7 @@ class MultiScale_TemporalConv(keras.Model):
         # Additional Max & 1x1 branch
         self.branches.append(
             keras.Sequential([
-                layers.Conv2D(branch_channels, kernel_size=1, strides=(stride,1), padding='valid', data_format='channels_first' ),
+                layers.Conv2D(branch_channels, kernel_size=1, strides=(stride,1), padding='valid' , data_format='channels_last'),
                 layers.BatchNormalization(),
                 layers.Activation(activation),
                 layers.MaxPool2D(pool_size=(3,1), strides=(1,1), padding='same'),
@@ -95,11 +95,10 @@ class MultiScale_TemporalConv(keras.Model):
 
         self.branches.append(
             keras.Sequential([
-                layers.Conv2D(branch_channels, kernel_size=1, padding='valid', strides=(stride,1),data_format='channels_first'),
+                layers.Conv2D(branch_channels, kernel_size=1, padding='valid', strides=(stride,1) ,data_format='channels_last'),
                 layers.BatchNormalization()
             ])
         )
-
         # Residual connection
         if not residual:
             self.residual = lambda x: 0
@@ -121,10 +120,9 @@ class MultiScale_TemporalConv(keras.Model):
             out = tempconv(x)
             #print('===out',np.shape(out))
             branch_outs.append(out)
-            
         #print("TCN_out",np.shape(out) )
-        out = tf.concat(branch_outs, axis=1)
-        #print("TCN_out+concat",np.shape(out) )
+        out = tf.concat(branch_outs, axis=-1)
+        #print("===res==",np.shape(res) )
         #print('===out==',np.shape(out))
         out += res
         out = self.act(out)

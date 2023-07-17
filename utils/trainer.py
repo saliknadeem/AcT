@@ -25,6 +25,8 @@ from utils.tools import Logger
 
 import tensorflow.keras.backend as K
 
+from utils.Graphtools import AdjMatrixGraph
+
 
 # TRAINER CLASS 
 class Trainer:
@@ -91,9 +93,13 @@ class Trainer:
         #x = tf.keras.layers.Dense(self.d_model)(x)
         #print('X_in',X_in.shape.as_list())
         #print('A_in',A_in.shape.as_list())
+
         x = [inputs,x,X_in,A_in]
+
+        graph = AdjMatrixGraph()
+        A_binary = K.get_value(graph.A_binary)
         x = PatchClassEmbedding(self.d_model, self.config, self.config[self.config['DATASET']]['FRAMES'] // self.config['SUBSAMPLE'], 
-                                pos_emb=None)(x)
+                                A_binary=A_binary, pos_emb=None)(x)
         #print('x after PatchClassEmbedding',x.shape.as_list())
         x = transformer(x)
         #print('x after transformer',x.shape.as_list())

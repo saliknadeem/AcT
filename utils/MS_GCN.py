@@ -69,13 +69,15 @@ class MultiScale_GraphConv(tf.keras.layers.Layer):
 
     def call(self, x):
         N, C, T, V = x.shape
+
         A = self.A_powers
         if self.use_mask:
             A = A + self.A_res
         support = tf.einsum('vu,nctu->nctv', A, x)
-        support = tf.reshape(support, (N, C, T, self.num_scales, V))
+        
+        support = tf.reshape(support, (-1, C, T, self.num_scales, V))
         support = tf.transpose(support, (0, 3, 1, 2, 4))
-        support = tf.reshape(support, (N, self.num_scales*C, T, V))
+        support = tf.reshape(support, (-1, self.num_scales*C, T, V))
         out = self.mlp(support)
         return out
 
